@@ -2,7 +2,7 @@
 
 Desktop-only single-page PNG editor that lets you upload an image and overlay fully customizable text. Built for the Adomate coding assignment.
 
-![screenshot](https://dummyimage.com/1200x700/0b0b0b/ffffff&text=Image+Text+Composer)
+![App Screenshot](./app_screen.jpg)
 
 ## ✨ Features (Core)
 - Upload PNG as background; canvas auto-sizes to the image and keeps original dimensions on export.
@@ -22,9 +22,9 @@ Desktop-only single-page PNG editor that lets you upload an image and overlay fu
 
 ## 🚀 Getting Started
 ```bash
-pnpm i   # or npm i / yarn
-pnpm dev # http://localhost:3000
-pnpm test # run unit tests
+npm i   # or npm i / yarn
+npm dev # http://localhost:3000
+npm test # run unit tests
 ```
 
 > Optional: To list all Google Fonts, set an API key:
@@ -58,7 +58,7 @@ store/                   # zustand editor store
 - **lib/color.test.ts** covers `rgbToHex()` for rgb/rgba/#hex/invalid inputs.
 - **lib/storage.test.ts** covers autosave helpers with a mocked `localStorage`.
 
-Run: `pnpm test` or `npm run test`.
+Run: `npm test` or `pm run test`.
 
 ## 🧠 Design & UX Choices
 - **Desktop-only**: editor is intentionally gated when `<1024px`.
@@ -79,6 +79,3 @@ Run: `pnpm test` or `npm run test`.
 - **Fabric.js** over Konva: text-editing UX is simpler, built-in textboxes, shadows, and serialization made history/autosave/export straightforward.
 - **Zustand** for minimal global state without boilerplate; fine-grained selectors keep renders small.
 - **No drag-and-drop for layers** to avoid heavy deps and focus on editor performance; up/down buttons cover the requirement.
-
-## 🧬 Performance & Code Quality Ideas
-See the submission message for a deeper list, including workerized history diffing, font list virtualization, and memoized selectors.
