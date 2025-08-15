@@ -134,15 +134,11 @@ export const useEditorStore = create<EditorState>()(
 
       // Mirror active object into store
       const setActive = () =>
-        set((s) => {
-          s.activeObject = canvas.getActiveObject() ?? null;
-        });
+        set({ activeObject: canvas.getActiveObject() ?? null });
       canvas.on("selection:created", setActive);
       canvas.on("selection:updated", setActive);
       canvas.on("selection:cleared", () =>
-        set((s) => {
-          s.activeObject = null;
-        })
+        set({ activeObject: null })
       );
 
       // Keyboard nudges & shortcuts
@@ -266,9 +262,7 @@ export const useEditorStore = create<EditorState>()(
       const sel = c.getActiveObjects();
       sel.forEach((o) => c.remove(o));
       c.discardActiveObject();
-      set((s) => {
-        s.activeObject = null;
-      });
+      set({ activeObject: null });
       c.requestRenderAll();
       get().refreshLayers();
     },
@@ -281,9 +275,7 @@ export const useEditorStore = create<EditorState>()(
         cloned.set({ left: (sel.left || 0) + 20, top: (sel.top || 0) + 20 });
         c.add(cloned);
         c.setActiveObject(cloned);
-        set((s) => {
-          s.activeObject = cloned;
-        });
+        set({ activeObject: cloned });
         c.requestRenderAll();
         get().refreshLayers();
       });
@@ -311,9 +303,7 @@ export const useEditorStore = create<EditorState>()(
       const obj = c.getObjects()[index];
       if (!obj) return;
       c.setActiveObject(obj);
-      set((s) => {
-        s.activeObject = obj;
-      });
+      set({ activeObject: obj });
       c.requestRenderAll();
       get().refreshLayers();
     },
@@ -324,9 +314,7 @@ export const useEditorStore = create<EditorState>()(
       if (!obj) return;
       if (c.getActiveObject() === obj) {
         c.discardActiveObject();
-        set((s) => {
-          s.activeObject = null;
-        });
+        set({ activeObject: null });
       }
       c.remove(obj);
       c.requestRenderAll();
@@ -341,9 +329,7 @@ export const useEditorStore = create<EditorState>()(
         cloned.set({ left: (obj.left || 0) + 20, top: (obj.top || 0) + 20 });
         c.add(cloned);
         c.setActiveObject(cloned);
-        set((s) => {
-          s.activeObject = cloned;
-        });
+        set({ activeObject: cloned });
         c.requestRenderAll();
         get().refreshLayers();
       });
@@ -366,9 +352,7 @@ export const useEditorStore = create<EditorState>()(
       const next = !obj.locked;
       applyLockFlags(obj, next);
       c.setActiveObject(obj);
-      set((s) => {
-        s.activeObject = obj;
-      });
+      set({ activeObject: obj });
       c.requestRenderAll();
       c.fire("object:modified", { target: obj });
       get().refreshLayers();
@@ -384,9 +368,7 @@ export const useEditorStore = create<EditorState>()(
       if (target === index) return;
       c.moveTo(obj, target);
       c.setActiveObject(obj);
-      set((s) => {
-        s.activeObject = obj;
-      });
+      set({ activeObject: obj });
       c.requestRenderAll();
       c.fire("object:modified", { target: obj });
       get().refreshLayers();
@@ -418,10 +400,7 @@ export const useEditorStore = create<EditorState>()(
       const idx = historyIndex - 1;
       restoreSnapshot(c, history[idx]).then(() => {
         sanitizeCanvas(c);
-        set((s) => {
-          s.historyIndex = idx;
-          s.activeObject = c.getActiveObject() ?? null;
-        });
+        set({ historyIndex: idx, activeObject: c.getActiveObject() ?? null });
         get().refreshLayers();
       });
     },
@@ -433,10 +412,7 @@ export const useEditorStore = create<EditorState>()(
       const idx = historyIndex + 1;
       restoreSnapshot(c, history[idx]).then(() => {
         sanitizeCanvas(c);
-        set((s) => {
-          s.historyIndex = idx;
-          s.activeObject = c.getActiveObject() ?? null;
-        });
+        set({ historyIndex: idx, activeObject: c.getActiveObject() ?? null });
         get().refreshLayers();
       });
     },
@@ -462,12 +438,7 @@ export const useEditorStore = create<EditorState>()(
 
       clearStorage();
 
-      set((s) => {
-        s.bgDataUrl = null;
-        s.history = [];
-        s.historyIndex = -1;
-        s.activeObject = null;
-      });
+      set({ bgDataUrl: null, history: [], historyIndex: -1, activeObject: null });
 
       get().refreshLayers();
       get().pushHistory();      
