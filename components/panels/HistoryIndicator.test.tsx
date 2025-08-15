@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { HistoryIndicator } from './HistoryIndicator';
 import { useEditorStore } from '@/store/editorStore';
 
@@ -25,7 +25,9 @@ describe('HistoryIndicator', () => {
     useEditorStore.setState({ history: [{}, {}, {}] as any, historyIndex: 1 });
     render(<HistoryIndicator />);
     expect(screen.getByText('History 2 / 3')).toBeInTheDocument();
-    useEditorStore.setState({ history: [{}, {}, {}, {}] as any, historyIndex: 2 });
+    act(() => {
+      useEditorStore.setState({ history: [{}, {}, {}, {}] as any, historyIndex: 2 });
+    });
     expect(screen.getByText('History 3 / 4')).toBeInTheDocument();
   });
 });
