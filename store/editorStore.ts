@@ -147,6 +147,14 @@ export const useEditorStore = create<EditorState>()(
 
       // Keyboard nudges & shortcuts
       const onKey = (ev: KeyboardEvent) => {
+        const target = ev.target as HTMLElement | null;
+        if (
+          (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) ||
+          target?.isContentEditable
+        ) {
+          return;
+        }
+
         if (
           ![
             "ArrowUp",
@@ -164,6 +172,8 @@ export const useEditorStore = create<EditorState>()(
         const c = get().canvas!;
         const sel = c.getActiveObject();
         const step = ev.shiftKey ? 10 : 1;
+
+        if ((sel as any)?.isEditing) return;
 
         if (sel && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(ev.code)) {
           ev.preventDefault();
