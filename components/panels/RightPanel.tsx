@@ -47,6 +47,14 @@ export function RightPanel() {
 
   const t = active as fabric.Textbox;
 
+  // fabric's shadow property can be either a string or a Shadow instance.
+  // Normalize it so we can safely access shadow properties without
+  // TypeScript complaining.
+  const shadow =
+    t.shadow && typeof t.shadow !== "string"
+      ? (t.shadow as fabric.Shadow)
+      : undefined;
+
   const commit = (apply?: () => void) => {
     apply?.();
     t.setCoords();
@@ -211,7 +219,7 @@ export function RightPanel() {
         <div className="grid grid-cols-3 gap-2">
           <NumInput
             label="Blur"
-            value={(t.shadow?.blur as number) || 0}
+            value={shadow?.blur || 0}
             min={0}
             max={50}
             step={1}
@@ -219,17 +227,17 @@ export function RightPanel() {
               commit(
                 () =>
                   (t.shadow = new fabric.Shadow({
-                    color: (t.shadow?.color as string) || "#00000044",
+                    color: shadow?.color || "#00000044",
                     blur: v,
-                    offsetX: t.shadow?.offsetX || 0,
-                    offsetY: t.shadow?.offsetY || 0,
+                    offsetX: shadow?.offsetX || 0,
+                    offsetY: shadow?.offsetY || 0,
                   }))
               )
             }
           />
           <NumInput
             label="X"
-            value={(t.shadow?.offsetX as number) || 0}
+            value={shadow?.offsetX || 0}
             min={-50}
             max={50}
             step={1}
@@ -237,17 +245,17 @@ export function RightPanel() {
               commit(
                 () =>
                   (t.shadow = new fabric.Shadow({
-                    color: (t.shadow?.color as string) || "#00000044",
-                    blur: t.shadow?.blur || 0,
+                    color: shadow?.color || "#00000044",
+                    blur: shadow?.blur || 0,
                     offsetX: v,
-                    offsetY: t.shadow?.offsetY || 0,
+                    offsetY: shadow?.offsetY || 0,
                   }))
               )
             }
           />
           <NumInput
             label="Y"
-            value={(t.shadow?.offsetY as number) || 0}
+            value={shadow?.offsetY || 0}
             min={-50}
             max={50}
             step={1}
@@ -255,9 +263,9 @@ export function RightPanel() {
               commit(
                 () =>
                   (t.shadow = new fabric.Shadow({
-                    color: (t.shadow?.color as string) || "#00000044",
-                    blur: t.shadow?.blur || 0,
-                    offsetX: t.shadow?.offsetX || 0,
+                    color: shadow?.color || "#00000044",
+                    blur: shadow?.blur || 0,
+                    offsetX: shadow?.offsetX || 0,
                     offsetY: v,
                   }))
               )
@@ -268,15 +276,15 @@ export function RightPanel() {
           <span className="text-xs text-zinc-400">Shadow color</span>
           <input
             type="color"
-            value={String(t.shadow?.color || "#00000044")}
+            value={String(shadow?.color || "#00000044")}
             onChange={(e) =>
               commit(
                 () =>
                   (t.shadow = new fabric.Shadow({
                     color: e.target.value,
-                    blur: t.shadow?.blur || 0,
-                    offsetX: t.shadow?.offsetX || 0,
-                    offsetY: t.shadow?.offsetY || 0,
+                    blur: shadow?.blur || 0,
+                    offsetX: shadow?.offsetX || 0,
+                    offsetY: shadow?.offsetY || 0,
                   }))
               )
             }
