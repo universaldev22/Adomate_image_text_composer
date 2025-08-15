@@ -209,9 +209,7 @@ export const useEditorStore = create<EditorState>()(
         (capture as any)._t = setTimeout(capture, 300);
       });
 
-      set((s) => {
-        s.canvas = canvas;
-      });
+      set({ canvas });
 
       // Restore (guarded)
       (async () => {
