@@ -1,6 +1,7 @@
 // File: lib/canvasUtils.ts
 import { fabric } from "fabric";
 
+/** Read a File (PNG) as a data URL. */
 export async function dataUrlFromFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -11,30 +12,39 @@ export async function dataUrlFromFile(file: File): Promise<string> {
 }
 
 /**
- * Loads a PNG data URL as the Canvas background, sets canvas size to the image size,
- * and anchors the background at the canvas origin (0,0). The canvas element is centered
- * by layout; this function ensures the background doesn't "jump" later.
+ * Load a PNG as the CANVAS BACKGROUND at exact native size.
+ * - Resizes the canvas to match the image (no scaling)
+ * - Resets viewport transform (prevents stray translation that creates gaps)
+ * - Pins background at (0,0) with origin top/left
  */
 export async function loadBackgroundFromDataUrl(
   canvas: fabric.Canvas,
-  dataUrl: string
+  dataUrl: string,
+  shouldApply?: () => boolean
 ) {
   return new Promise<void>((resolve) => {
     fabric.Image.fromURL(
       dataUrl,
       (img) => {
         if (!img) return resolve();
-        const w = img.width ?? 0,
-          h = img.height ?? 0;
+        if (shouldApply && !shouldApply()) return resolve();
 
-        // Ensure natural pixel dimensions on the canvas
+        const w = img.width ?? 0;
+        const h = img.height ?? 0;
+
+        // 1) Canvas EXACTLY matches image dimensions
         canvas.setWidth(w);
         canvas.setHeight(h);
 
-        // Pin background to top-left of the canvas
+        // 2) Reset any prior panning/zoom to avoid gaps
+        canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+        canvas.calcOffset();
+
+        // 3) Pin bg at (0,0) — no gaps
         canvas.setBackgroundImage(
           img,
           () => {
+            canvas.discardActiveObject();
             canvas.renderAll();
             resolve();
           },
@@ -49,8 +59,8 @@ export async function loadBackgroundFromDataUrl(
 /** Adds a default textbox and selects it. */
 export function addTextbox(canvas: fabric.Canvas) {
   const textbox = new fabric.Textbox("Double-click to edit", {
-    left: canvas.getWidth() / 2 - 150,
-    top: canvas.getHeight() / 2 - 30,
+    left: 100,
+    top: 150,
     width: 300,
     fontFamily: "Inter",
     fontSize: 48,
@@ -67,4 +77,12 @@ export function addTextbox(canvas: fabric.Canvas) {
   canvas.add(textbox);
   canvas.setActiveObject(textbox);
   canvas.requestRenderAll();
+}
+
+/** Fully clear any background image from the canvas. */
+export function clearBackground(canvas: fabric.Canvas) {
+  (canvas as any).backgroundImage = undefined;
+  // @ts-ignore allow null for setter
+  canvas.setBackgroundImage(null, undefined);
+  canvas.renderAll();
 }

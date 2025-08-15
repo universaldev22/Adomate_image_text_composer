@@ -3,27 +3,35 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { fabric } from "fabric";
-import { addTextbox, loadBackgroundFromDataUrl } from "@/lib/canvasUtils";
+import {
+  addTextbox,
+  loadBackgroundFromDataUrl,
+  clearBackground,
+} from "@/lib/canvasUtils";
 import { Snapshot, restoreSnapshot, takeSnapshot } from "@/lib/history";
 import { saveToStorage, loadFromStorage, clearStorage } from "@/lib/storage";
 
 export type LayerEntry = { id: string; name: string; visible: boolean; locked: boolean };
 export type SavedDesign = { bgDataUrl: string | null; snapshot: Snapshot | null };
 
-function sanitizeObjectFlags(o: any) {
-  const lock = !!o.locked;
-  o.selectable = !lock;
-  o.evented = !lock;
-  o.hasControls = !lock;
-  if (o.type === "textbox") o.editable = !lock;
+function applyLockFlags(o: any, locked: boolean) {
+  o.locked = locked;
+  o.selectable = !locked;
+  o.evented = !locked;
+  o.hasControls = !locked;
+  if (o.type === "textbox") o.editable = !locked;
 }
 function sanitizeCanvas(c: fabric.Canvas) {
-  c.getObjects().forEach((o: any) => sanitizeObjectFlags(o));
+  c.getObjects().forEach((o: any) => applyLockFlags(o, !!o.locked));
 }
 
 interface EditorState {
   canvas: fabric.Canvas | null;
-  initCanvas: (el: HTMLCanvasElement) => void;
+  activeObject: fabric.Object | null;
+  restoreEpoch: number;
+  containerCanvas: HTMLDivElement | null;
+
+  initCanvas: (el: HTMLCanvasElement, container: HTMLDivElement) => void;
 
   bgDataUrl: string | null;
   loadPng: (file: File) => Promise<void>;
@@ -35,7 +43,6 @@ interface EditorState {
   layers: LayerEntry[];
   refreshLayers: () => void;
 
-  // Layer-indexed (used by LayersPanel)
   selectLayer: (index: number) => void;
   deleteLayerAt: (index: number) => void;
   duplicateLayerAt: (index: number) => void;
@@ -43,14 +50,12 @@ interface EditorState {
   toggleLockAt: (index: number) => void;
   moveLayerAt: (index: number, dir: "up" | "down") => void;
 
-  // History
   history: Snapshot[];
   historyIndex: number;
-  pushHistory: () => void; // internal use by event capture
+  pushHistory: () => void;
   undo: () => void;
   redo: () => void;
 
-  // Autosave
   autosave: () => void;
   resetDesign: () => void;
 }
@@ -58,26 +63,38 @@ interface EditorState {
 export const useEditorStore = create<EditorState>()(
   immer((set, get) => ({
     canvas: null,
+    activeObject: null,
+    restoreEpoch: 0,
+    containerCanvas: null,
 
-    initCanvas: (el) => {
+    initCanvas: (el, container) => {
+      set({ containerCanvas: container });
       const canvas = new fabric.Canvas(el, {
         backgroundColor: "#111827",
         preserveObjectStacking: true,
         fireRightClick: false,
+
+        // Enable marquee selection (drag to lasso-select)
         selection: true,
+        skipTargetFind: false,
+        perPixelTargetFind: false,
+        width: container.clientWidth - 10,
+        height: container.clientHeight - 10
       });
 
-      // Visual selection
-      canvas.selectionColor = "rgba(34,211,238,0.15)";
+      // Visible marquee style
+      canvas.selectionColor = "rgba(34,211,238,0.18)";
       canvas.selectionBorderColor = "#22d3ee";
       canvas.selectionDashArray = [4, 3];
+      canvas.selectionLineWidth = 1;
 
-      // Snap-to-center
+      // Snap-to-center guides
       const SNAP = 6;
       let showV = false,
         showH = false;
+
       canvas.on("object:moving", (e) => {
-        const obj = e.target as fabric.Object;
+        const obj = e.target as fabric.Object | undefined;
         if (!obj) return;
         const cW = canvas.getWidth(),
           cH = canvas.getHeight();
@@ -115,6 +132,19 @@ export const useEditorStore = create<EditorState>()(
         ctx.restore();
       });
 
+      // Mirror active object into store
+      const setActive = () =>
+        set((s) => {
+          s.activeObject = canvas.getActiveObject() ?? null;
+        });
+      canvas.on("selection:created", setActive);
+      canvas.on("selection:updated", setActive);
+      canvas.on("selection:cleared", () =>
+        set((s) => {
+          s.activeObject = null;
+        })
+      );
+
       // Keyboard nudges & shortcuts
       const onKey = (ev: KeyboardEvent) => {
         if (
@@ -130,9 +160,11 @@ export const useEditorStore = create<EditorState>()(
           ].includes(ev.code)
         )
           return;
+
         const c = get().canvas!;
         const sel = c.getActiveObject();
         const step = ev.shiftKey ? 10 : 1;
+
         if (sel && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(ev.code)) {
           ev.preventDefault();
           const t = sel as fabric.Object;
@@ -142,15 +174,18 @@ export const useEditorStore = create<EditorState>()(
           if (ev.code === "ArrowRight") t.left = (t.left || 0) + step;
           t.setCoords();
           c.requestRenderAll();
-          c.fire("object:modified", { target: t }); // ensure history capture
+          c.fire("object:modified", { target: t });
         }
+
         if ((ev.code === "Delete" || ev.code === "Backspace") && sel) {
           get().deleteSelection();
         }
+
         if ((ev.metaKey || ev.ctrlKey) && ev.code === "KeyD") {
           ev.preventDefault();
           get().duplicateSelection();
         }
+
         if ((ev.metaKey || ev.ctrlKey) && ev.code === "KeyZ") {
           ev.preventDefault();
           ev.shiftKey ? get().redo() : get().undo();
@@ -158,12 +193,11 @@ export const useEditorStore = create<EditorState>()(
       };
       window.addEventListener("keydown", onKey);
 
-      // History capture — rely on events only (no manual pushHistory in actions)
+      // History capture
       const capture = () => get().pushHistory();
       canvas.on("object:added", capture);
       canvas.on("object:removed", capture);
       canvas.on("object:modified", capture);
-      // throttle typing noise
       canvas.on("text:changed", () => {
         clearTimeout((capture as any)._t);
         (capture as any)._t = setTimeout(capture, 300);
@@ -173,22 +207,29 @@ export const useEditorStore = create<EditorState>()(
         s.canvas = canvas;
       });
 
-      // Attempt to restore autosave
-      setTimeout(async () => {
+      // Restore (guarded)
+      (async () => {
+        const epoch = get().restoreEpoch;
         const saved = loadFromStorage<SavedDesign>();
+
         if (saved?.bgDataUrl) {
-          await loadBackgroundFromDataUrl(canvas, saved.bgDataUrl);
+          await loadBackgroundFromDataUrl(canvas, saved.bgDataUrl, () => get().restoreEpoch === epoch);
+          if (get().restoreEpoch !== epoch) return;
           set((s) => {
-            s.bgDataUrl = saved.bgDataUrl;
+            s.bgDataUrl = saved.bgDataUrl!;
           });
         }
+
         if (saved?.snapshot) {
+          if (get().restoreEpoch !== epoch) return;
           await restoreSnapshot(canvas, saved.snapshot);
+          if (get().restoreEpoch !== epoch) return;
           sanitizeCanvas(canvas);
         }
+
         get().refreshLayers();
         get().pushHistory(); // baseline
-      }, 0);
+      })();
     },
 
     bgDataUrl: null,
@@ -201,15 +242,13 @@ export const useEditorStore = create<EditorState>()(
       set((s) => {
         s.bgDataUrl = dataUrl;
       });
-      // object:added is not fired by background image; synthesize a modified for history
-      c.fire("object:modified");
+      c.fire("object:modified"); // history capture for bg change
     },
 
     addText() {
       const c = get().canvas!;
       addTextbox(c);
       get().refreshLayers();
-      // history captured by object:added
     },
 
     deleteSelection() {
@@ -217,8 +256,10 @@ export const useEditorStore = create<EditorState>()(
       const sel = c.getActiveObjects();
       sel.forEach((o) => c.remove(o));
       c.discardActiveObject();
+      set((s) => {
+        s.activeObject = null;
+      });
       c.requestRenderAll();
-      // history captured by object:removed
       get().refreshLayers();
     },
 
@@ -230,8 +271,10 @@ export const useEditorStore = create<EditorState>()(
         cloned.set({ left: (sel.left || 0) + 20, top: (sel.top || 0) + 20 });
         c.add(cloned);
         c.setActiveObject(cloned);
+        set((s) => {
+          s.activeObject = cloned;
+        });
         c.requestRenderAll();
-        // history captured by object:added
         get().refreshLayers();
       });
     },
@@ -258,6 +301,9 @@ export const useEditorStore = create<EditorState>()(
       const obj = c.getObjects()[index];
       if (!obj) return;
       c.setActiveObject(obj);
+      set((s) => {
+        s.activeObject = obj;
+      });
       c.requestRenderAll();
       get().refreshLayers();
     },
@@ -266,11 +312,15 @@ export const useEditorStore = create<EditorState>()(
       const c = get().canvas!;
       const obj = c.getObjects()[index];
       if (!obj) return;
+      if (c.getActiveObject() === obj) {
+        c.discardActiveObject();
+        set((s) => {
+          s.activeObject = null;
+        });
+      }
       c.remove(obj);
-      c.discardActiveObject();
       c.requestRenderAll();
       get().refreshLayers();
-      // captured by object:removed
     },
 
     duplicateLayerAt(index) {
@@ -281,9 +331,11 @@ export const useEditorStore = create<EditorState>()(
         cloned.set({ left: (obj.left || 0) + 20, top: (obj.top || 0) + 20 });
         c.add(cloned);
         c.setActiveObject(cloned);
+        set((s) => {
+          s.activeObject = cloned;
+        });
         c.requestRenderAll();
         get().refreshLayers();
-        // captured by object:added
       });
     },
 
@@ -293,7 +345,7 @@ export const useEditorStore = create<EditorState>()(
       if (!obj) return;
       obj.visible = !obj.visible;
       c.requestRenderAll();
-      c.fire("object:modified", { target: obj }); // ensure history capture
+      c.fire("object:modified", { target: obj });
       get().refreshLayers();
     },
 
@@ -301,11 +353,12 @@ export const useEditorStore = create<EditorState>()(
       const c = get().canvas!;
       const obj = c.getObjects()[index] as any;
       if (!obj) return;
-      sanitizeObjectFlags(obj);
-      obj.locked = !obj.locked;
-      // Re-apply flags consistent with new lock state
-      sanitizeObjectFlags(obj);
+      const next = !obj.locked;
+      applyLockFlags(obj, next);
       c.setActiveObject(obj);
+      set((s) => {
+        s.activeObject = obj;
+      });
       c.requestRenderAll();
       c.fire("object:modified", { target: obj });
       get().refreshLayers();
@@ -321,20 +374,23 @@ export const useEditorStore = create<EditorState>()(
       if (target === index) return;
       c.moveTo(obj, target);
       c.setActiveObject(obj);
+      set((s) => {
+        s.activeObject = obj;
+      });
       c.requestRenderAll();
-      c.fire("object:modified", { target: obj }); // moveTo doesn't emit; synthesize
+      c.fire("object:modified", { target: obj });
       get().refreshLayers();
     },
 
     // History & autosave
     history: [],
     historyIndex: -1,
+
     pushHistory() {
       const c = get().canvas;
       if (!c) return;
       const snap = takeSnapshot(c);
       set((s) => {
-        // drop "future"
         if (s.historyIndex < s.history.length - 1) {
           s.history = s.history.slice(0, s.historyIndex + 1);
         }
@@ -354,6 +410,7 @@ export const useEditorStore = create<EditorState>()(
         sanitizeCanvas(c);
         set((s) => {
           s.historyIndex = idx;
+          s.activeObject = c.getActiveObject() ?? null;
         });
         get().refreshLayers();
       });
@@ -368,6 +425,7 @@ export const useEditorStore = create<EditorState>()(
         sanitizeCanvas(c);
         set((s) => {
           s.historyIndex = idx;
+          s.activeObject = c.getActiveObject() ?? null;
         });
         get().refreshLayers();
       });
@@ -383,18 +441,26 @@ export const useEditorStore = create<EditorState>()(
 
     resetDesign() {
       const c = get().canvas!;
-      // Remove everything and background, then clear autosave BEFORE pushing a baseline
+      // cancel any in-flight restore
+      set((s) => {
+        s.restoreEpoch += 1;
+      });
+
+      c.discardActiveObject();
       c.clear();
-      c.setBackgroundImage(null, c.renderAll.bind(c));
+      clearBackground(c);
+
       clearStorage();
+
       set((s) => {
         s.bgDataUrl = null;
         s.history = [];
         s.historyIndex = -1;
+        s.activeObject = null;
       });
+
       get().refreshLayers();
-      // Push clean baseline so undo/redo start from a known state
-      get().pushHistory();
+      get().pushHistory();      
     },
   }))
 );

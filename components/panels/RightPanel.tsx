@@ -1,16 +1,18 @@
 // File: components/panels/RightPanel.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState, useRef } from "react";
 import { fabric } from "fabric";
 import { useEditorStore } from "@/store/editorStore";
 import { fetchGoogleFonts, ensureFont, type GoogleFont } from "@/lib/fonts";
 import { rgbToHex } from "@/lib/color";
+import { useEffect } from "react";
 
 export function RightPanel() {
   const canvas = useEditorStore((s) => s.canvas);
+  const active = useEditorStore((s) => s.activeObject);
   const refreshLayers = useEditorStore((s) => s.refreshLayers);
-  const [active, setActive] = useState<fabric.Object | null>(null);
+
   const [fonts, setFonts] = useState<GoogleFont[]>([]);
   const [, force] = useState(0);
   const commitTimer = useRef<number | null>(null);
@@ -25,26 +27,6 @@ export function RightPanel() {
       mounted = false;
     };
   }, []);
-
-  // Track selection changes; defer to avoid dev overlay warning
-  useEffect(() => {
-    if (!canvas) return;
-    const defer = (fn: () => void) => queueMicrotask(fn);
-    const updateSel = () => defer(() => setActive(canvas.getActiveObject() ?? null));
-    const clearSel = () => defer(() => setActive(null));
-
-    canvas.on("selection:created", updateSel);
-    canvas.on("selection:updated", updateSel);
-    canvas.on("selection:cleared", clearSel);
-    // initialize
-    updateSel();
-
-    return () => {
-      canvas.off("selection:created", updateSel);
-      canvas.off("selection:updated", updateSel);
-      canvas.off("selection:cleared", clearSel);
-    };
-  }, [canvas]);
 
   if (!active) {
     return (
@@ -65,7 +47,6 @@ export function RightPanel() {
 
   const t = active as fabric.Textbox;
 
-  // Commit helper: apply + render + refresh panel + debounce history via store capture
   const commit = (apply?: () => void) => {
     apply?.();
     t.setCoords();
@@ -73,21 +54,22 @@ export function RightPanel() {
     refreshLayers();
     force((x) => x + 1);
 
-    // cause store's "text:changed" throttle to capture a history snapshot
+    // Ask store history to capture (throttled in initCanvas through text:changed)
     canvas?.fire("text:changed", { target: t });
 
     if (commitTimer.current) window.clearTimeout(commitTimer.current);
     commitTimer.current = window.setTimeout(() => {
-      // extra safety: fire modified to ensure listeners update
       canvas?.fire("object:modified", { target: t });
       commitTimer.current = null;
     }, 300);
   };
 
-  const currentFamily = (t.fontFamily as string) || "Inter";
-  const currentWeight = String(t.fontWeight ?? "400");
+  const [family, weight] = [
+    (t.fontFamily as string) || "Inter",
+    String(t.fontWeight ?? "400"),
+  ];
   const availableWeights =
-    fonts.find((f) => f.family === currentFamily)?.variants ??
+    fonts.find((f) => f.family === family)?.variants ??
     ["100", "200", "300", "400", "500", "600", "700", "800", "900"];
 
   return (
@@ -113,12 +95,12 @@ export function RightPanel() {
           </label>
           <select
             className="w-full rounded-md border border-zinc-800 bg-zinc-900 p-2 outline-none"
-            value={currentFamily}
+            value={family}
             onChange={async (e) => {
-              const family = e.target.value;
-              await ensureFont(family, currentWeight);
+              const fam = e.target.value;
+              await ensureFont(fam, weight);
               commit(() => {
-                t.fontFamily = family;
+                t.fontFamily = fam;
               });
             }}
           >
@@ -135,10 +117,10 @@ export function RightPanel() {
           </label>
           <select
             className="w-full rounded-md border border-zinc-800 bg-zinc-900 p-2 outline-none"
-            value={currentWeight}
+            value={weight}
             onChange={async (e) => {
               const w = e.target.value;
-              await ensureFont(currentFamily, w);
+              await ensureFont(family, w);
               commit(() => {
                 t.fontWeight = w as any;
               });
@@ -305,7 +287,7 @@ export function RightPanel() {
   );
 }
 
-/** Renamed from `Number` to avoid conflicts with global Number. */
+/** small numeric input widget */
 function NumInput({
   label,
   value,
@@ -323,9 +305,7 @@ function NumInput({
 }) {
   return (
     <div>
-      <label className="mb-1 block text-xs uppercase text-zinc-400">
-        {label}
-      </label>
+      <label className="mb-1 block text-xs uppercase text-zinc-400">{label}</label>
       <input
         type="number"
         className="w-full rounded-md border border-zinc-800 bg-zinc-900 p-2 outline-none"
